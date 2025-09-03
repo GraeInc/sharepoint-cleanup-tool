@@ -1,5 +1,5 @@
-# SharePoint Empty Folder Cleanup Script
-# Requires PnP.PowerShell module: Install-Module -Name PnP.PowerShell
+# SharePoint Empty Folder Cleanup Script - Fixed Version
+# Requires PnP.PowerShell module
 
 param(
     [Parameter(Mandatory=$true)]
@@ -11,15 +11,20 @@ param(
     [Parameter(Mandatory=$true)]
     [datetime]$ModifiedDate,
     
-    [switch]$WhatIf = $true  # Safe mode by default - set to $false to actually delete
+    [switch]$WhatIf = $true  # Safe mode by default
 )
 
-# Connect to SharePoint
+# Import module
+Import-Module PnP.PowerShell -ErrorAction SilentlyContinue
+
+# Connect to SharePoint - only connect once!
 Write-Host "Connecting to SharePoint site: $SiteUrl" -ForegroundColor Green
 
-# Check if we should use credential authentication
-$useCredentials = Read-Host "Use username/password authentication? (Y/N) [Y]"
-if ([string]::IsNullOrWhiteSpace($useCredentials)) { $useCredentials = "Y" }
+# Simple authentication choice
+$useCredentials = Read-Host "Use username/password authentication? (Y/N) [N]"
+if ([string]::IsNullOrWhiteSpace($useCredentials)) { $useCredentials = "N" }
+
+$connected = $false
 
 if ($useCredentials -eq "Y" -or $useCredentials -eq "y") {
     # Get credentials
@@ -30,20 +35,50 @@ if ($useCredentials -eq "Y" -or $useCredentials -eq "y") {
     try {
         Connect-PnPOnline -Url $SiteUrl -Credentials $Credentials
         Write-Host "Connected successfully!" -ForegroundColor Green
+        $connected = $true
     }
     catch {
         Write-Host "Credential authentication failed: $_" -ForegroundColor Red
-        Write-Host "Trying web login..." -ForegroundColor Yellow
-        Connect-PnPOnline -Url $SiteUrl -UseWebLogin
     }
 }
-else {
-    Write-Host "A browser window will open for authentication." -ForegroundColor Yellow
-    Connect-PnPOnline -Url $SiteUrl -UseWebLogin
+
+# If not connected yet, try web login
+if (-not $connected) {
+    Write-Host "Opening browser for authentication..." -ForegroundColor Yellow
+    try {
+        # Try UseWebLogin if it exists
+        Connect-PnPOnline -Url $SiteUrl -UseWebLogin -ErrorAction Stop
+        Write-Host "Connected successfully!" -ForegroundColor Green
+        $connected = $true
+    }
+    catch {
+        # Fallback to other methods
+        Write-Host "Trying alternative authentication..." -ForegroundColor Yellow
+        try {
+            Connect-PnPOnline -Url $SiteUrl -LaunchBrowser
+            $connected = $true
+        }
+        catch {
+            try {
+                Connect-PnPOnline -Url $SiteUrl -DeviceLogin
+                $connected = $true
+            }
+            catch {
+                Write-Host "All authentication methods failed." -ForegroundColor Red
+                exit 1
+            }
+        }
+    }
+}
+
+if (-not $connected) {
+    Write-Host "Failed to connect to SharePoint." -ForegroundColor Red
+    exit 1
 }
 
 try {
     # Get all folders from the document library
+    Write-Host ""
     Write-Host "Getting folders from library: $LibraryName" -ForegroundColor Yellow
     
     # Get folders modified on the specific date
@@ -151,4 +186,4 @@ finally {
 }
 
 # Example usage:
-# .\SharePoint-Cleanup.ps1 -SiteUrl "https://yourtenant.sharepoint.com/sites/yoursite" -LibraryName "Documents" -ModifiedDate "2024-01-15" -WhatIf:$false
+# .\sharepoint-cleanup-fixed.ps1 -SiteUrl "https://yourtenant.sharepoint.com/sites/yoursite" -LibraryName "Documents" -ModifiedDate "2024-01-15" -WhatIf:$false
