@@ -1,0 +1,33 @@
+# PowerShell execution logs
+*.log
+
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump files
+*.dmp
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows shortcuts
+*.lnk
+
+# Temporary files
+*.tmp
+*.temp
+
+# Visual Studio Code
+.vscode/
+
+# PowerShell profiles (user-specific)
+*profile.ps1
+
+# Test files
+test_*
+*_test.ps1
