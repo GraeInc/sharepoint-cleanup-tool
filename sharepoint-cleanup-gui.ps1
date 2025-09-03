@@ -1,15 +1,30 @@
 # SharePoint Empty Folder Cleanup GUI Tool
 # Requires PnP.PowerShell module
+# Version: 2.0
+# Author: SharePoint Cleanup Tool
 
+[CmdletBinding()]
+param()
+
+#region Assembly Loading
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+#endregion
 
+#region Module Check
 # Check if PnP.PowerShell is installed
-if (!(Get-Module -ListAvailable -Name PnP.PowerShell)) {
-    [System.Windows.Forms.MessageBox]::Show("PnP.PowerShell module is not installed.`n`nPlease run:`nInstall-Module -Name PnP.PowerShell", "Missing Module", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-    exit
+if (-not (Get-Module -ListAvailable -Name PnP.PowerShell)) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "PnP.PowerShell module is not installed.`n`nPlease run:`nInstall-Module -Name PnP.PowerShell", 
+        "Missing Module", 
+        [System.Windows.Forms.MessageBoxButtons]::OK, 
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+    exit 1
 }
+#endregion
 
+#region Form Creation
 # Create form
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "SharePoint Empty Folder Cleanup Tool"
@@ -73,9 +88,18 @@ $buttonScan.Text = "Scan Folders"
 $buttonScan.BackColor = [System.Drawing.Color]::LightBlue
 $form.Controls.Add($buttonScan)
 
+# Cancel Button
+$buttonCancel = New-Object System.Windows.Forms.Button
+$buttonCancel.Location = New-Object System.Drawing.Point(230, 140)
+$buttonCancel.Size = New-Object System.Drawing.Size(100, 30)
+$buttonCancel.Text = "Cancel"
+$buttonCancel.BackColor = [System.Drawing.Color]::LightYellow
+$buttonCancel.Enabled = $false
+$form.Controls.Add($buttonCancel)
+
 # Delete Button
 $buttonDelete = New-Object System.Windows.Forms.Button
-$buttonDelete.Location = New-Object System.Drawing.Point(230, 140)
+$buttonDelete.Location = New-Object System.Drawing.Point(340, 140)
 $buttonDelete.Size = New-Object System.Drawing.Size(100, 30)
 $buttonDelete.Text = "Delete Selected"
 $buttonDelete.BackColor = [System.Drawing.Color]::LightCoral
@@ -109,97 +133,237 @@ $progressBar.Location = New-Object System.Drawing.Point(10, 430)
 $progressBar.Size = New-Object System.Drawing.Size(560, 20)
 $progressBar.Visible = $false
 $form.Controls.Add($progressBar)
+#endregion
 
-# Global variables for folder data
-$script:emptyFolders = @()
+#region Global Variables
+# Global variables for folder data and cancellation
+$script:EmptyFolders = @()
+$script:CancellationToken = $false
+$script:ScanJob = $null
+#endregion
 
-# Scan Button Click Event
+#region Helper Functions
+# Function to validate URL format
+function Test-UrlFormat {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url
+    )
+    
+    try {
+        $uri = [System.Uri]::new($Url)
+        return ($uri.Scheme -eq "https" -and $uri.Host -like "*.sharepoint.com")
+    }
+    catch {
+        Write-Verbose "Invalid URL format: $Url"
+        return $false
+    }
+}
+
+# Function to run scan with timeout
+function Start-ScanWithTimeout {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SiteUrl,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$LibraryName,
+        
+        [Parameter(Mandatory = $true)]
+        [datetime]$ModifiedDate
+    )
+    
+    $job = Start-Job -ScriptBlock {
+        param($SiteUrl, $LibraryName, $ModifiedDate)
+        
+        try {
+            # Import module in job context
+            Import-Module PnP.PowerShell -ErrorAction Stop
+            
+            # Connect with timeout
+            $connection = Connect-PnPOnline -Url $SiteUrl -Interactive -ReturnConnection -ErrorAction Stop
+            
+            # Get folders with timeout
+            $folders = Get-PnPListItem -List $LibraryName -Connection $connection -Query "
+                <View>
+                    <Query>
+                        <Where>
+                            <And>
+                                <Eq>
+                                    <FieldRef Name='FSObjType'/>
+                                    <Value Type='Integer'>1</Value>
+                                </Eq>
+                                <Eq>
+                                    <FieldRef Name='Modified'/>
+                                    <Value Type='DateTime'>$($ModifiedDate.ToString('yyyy-MM-dd'))</Value>
+                                </Eq>
+                            </And>
+                        </Where>
+                    </Query>
+                </View>" -ErrorAction Stop
+            
+            $emptyFolders = @()
+            
+            foreach ($folder in $folders) {
+                try {
+                    $folderContents = Get-PnPFolderItem -FolderSiteRelativeUrl $folder.FieldValues.FileRef -ItemType All -Connection $connection -ErrorAction SilentlyContinue
+                    
+                    if ($folderContents.Count -eq 0) {
+                        $emptyFolderInfo = [PSCustomObject]@{
+                            Name = $folder.FieldValues.FileLeafRef
+                            Path = $folder.FieldValues.FileRef
+                            Modified = $folder.FieldValues.Modified
+                            Id = $folder.Id
+                        }
+                        $emptyFolders += $emptyFolderInfo
+                    }
+                }
+                catch {
+                    # Skip folders we can't access
+                    Write-Verbose "Cannot access folder: $($folder.FieldValues.FileLeafRef)"
+                }
+            }
+            
+            return @{
+                Success = $true
+                EmptyFolders = $emptyFolders
+                TotalFolders = $folders.Count
+                Error = $null
+            }
+        }
+        catch {
+            return @{
+                Success = $false
+                EmptyFolders = @()
+                TotalFolders = 0
+                Error = $_.Exception.Message
+            }
+        }
+    } -ArgumentList $SiteUrl, $LibraryName, $ModifiedDate
+    
+    return $job
+}
+#endregion
+
+#region Event Handlers
+# Scan Button Click Event 
 $buttonScan.Add_Click({
     $siteUrl = $textBoxSite.Text.Trim()
     $libraryName = $textBoxLibrary.Text.Trim()
     $modifiedDate = $dateTimePicker.Value.Date
     
     if ([string]::IsNullOrEmpty($siteUrl) -or [string]::IsNullOrEmpty($libraryName)) {
-        [System.Windows.Forms.MessageBox]::Show("Please fill in Site URL and Library Name", "Input Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        [System.Windows.Forms.MessageBox]::Show(
+            "Please fill in Site URL and Library Name", 
+            "Input Required", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        return
+    }
+    
+    # Validate URL format
+    if (-not (Test-UrlFormat -Url $siteUrl)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Please enter a valid SharePoint Online URL (https://*.sharepoint.com/sites/*)", 
+            "Invalid URL", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
         return
     }
     
     $buttonScan.Enabled = $false
     $buttonDelete.Enabled = $false
+    $buttonCancel.Enabled = $true
     $listBoxResults.Items.Clear()
     $progressBar.Visible = $true
     $labelStatus.Text = "Connecting to SharePoint..."
     $labelStatus.ForeColor = [System.Drawing.Color]::Orange
+    $script:CancellationToken = $false
     
     try {
-        # Connect to SharePoint
-        Connect-PnPOnline -Url $siteUrl -Interactive
-        $labelStatus.Text = "Connected. Scanning folders..."
+        # Start scan job with timeout
+        $script:ScanJob = Start-ScanWithTimeout -SiteUrl $siteUrl -LibraryName $libraryName -ModifiedDate $modifiedDate
         
-        # Get folders
-        $folders = Get-PnPListItem -List $libraryName -Query "
-            <View>
-                <Query>
-                    <Where>
-                        <And>
-                            <Eq>
-                                <FieldRef Name='FSObjType'/>
-                                <Value Type='Integer'>1</Value>
-                            </Eq>
-                            <Eq>
-                                <FieldRef Name='Modified'/>
-                                <Value Type='DateTime'>$($modifiedDate.ToString('yyyy-MM-dd'))</Value>
-                            </Eq>
-                        </And>
-                    </Where>
-                </Query>
-            </View>"
+        # Monitor job with timeout
+        $timeout = 120  # 2 minutes timeout
+        $startTime = Get-Date
         
-        $script:emptyFolders = @()
-        $progressBar.Maximum = $folders.Count
-        
-        for ($i = 0; $i -lt $folders.Count; $i++) {
-            $folder = $folders[$i]
-            $progressBar.Value = $i + 1
-            $labelStatus.Text = "Checking folder $($i + 1) of $($folders.Count): $($folder.FieldValues.FileLeafRef)"
-            [System.Windows.Forms.Application]::DoEvents()
+        while ($script:ScanJob.State -eq "Running" -and -not $script:CancellationToken) {
+            if (((Get-Date) - $startTime).TotalSeconds -gt $timeout) {
+                Stop-Job $script:ScanJob -ErrorAction SilentlyContinue
+                Remove-Job $script:ScanJob -ErrorAction SilentlyContinue
+                throw "Operation timed out after $timeout seconds. Please check your connection and try again."
+            }
             
-            try {
-                $folderContents = Get-PnPFolderItem -FolderSiteRelativeUrl $folder.FieldValues.FileRef -ItemType All -ErrorAction SilentlyContinue
-                
-                if ($folderContents.Count -eq 0) {
-                    $emptyFolderInfo = [PSCustomObject]@{
-                        Name = $folder.FieldValues.FileLeafRef
-                        Path = $folder.FieldValues.FileRef
-                        Modified = $folder.FieldValues.Modified
-                        Id = $folder.Id
-                    }
-                    $script:emptyFolders += $emptyFolderInfo
-                    $listBoxResults.Items.Add("$($emptyFolderInfo.Name) - $($emptyFolderInfo.Modified.ToString('yyyy-MM-dd HH:mm'))", $true)
-                }
-            }
-            catch {
-                # Skip folders we can't access
-            }
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
         }
         
-        $labelStatus.Text = "Scan complete. Found $($script:emptyFolders.Count) empty folders out of $($folders.Count) total folders."
-        $labelStatus.ForeColor = [System.Drawing.Color]::Green
+        if ($script:CancellationToken) {
+            $labelStatus.Text = "Scan cancelled by user."
+            $labelStatus.ForeColor = [System.Drawing.Color]::Orange
+            return
+        }
         
-        if ($script:emptyFolders.Count -gt 0) {
+        # Get results
+        $result = Receive-Job $script:ScanJob
+        Remove-Job $script:ScanJob -ErrorAction SilentlyContinue
+        
+        if (-not $result.Success) {
+            throw $result.Error
+        }
+        
+        $script:EmptyFolders = $result.EmptyFolders
+        
+        if ($script:EmptyFolders.Count -gt 0) {
+            foreach ($folder in $script:EmptyFolders) {
+                $listBoxResults.Items.Add("$($folder.Name) - $($folder.Modified.ToString('yyyy-MM-dd HH:mm'))", $true)
+            }
             $buttonDelete.Enabled = $true
         }
+        
+        $labelStatus.Text = "Scan complete. Found $($script:EmptyFolders.Count) empty folders out of $($result.TotalFolders) total folders."
+        $labelStatus.ForeColor = [System.Drawing.Color]::Green
         
     }
     catch {
         $labelStatus.Text = "Error: $($_.Exception.Message)"
         $labelStatus.ForeColor = [System.Drawing.Color]::Red
-        [System.Windows.Forms.MessageBox]::Show("Error occurred during scan: $($_.Exception.Message)", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        [System.Windows.Forms.MessageBox]::Show(
+            "Error occurred during scan: $($_.Exception.Message)", 
+            "Error", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
     }
     finally {
+        if ($script:ScanJob -and $script:ScanJob.State -eq "Running") {
+            Stop-Job $script:ScanJob -ErrorAction SilentlyContinue
+            Remove-Job $script:ScanJob -ErrorAction SilentlyContinue
+        }
         $buttonScan.Enabled = $true
+        $buttonCancel.Enabled = $false
         $progressBar.Visible = $false
+        $script:ScanJob = $null
     }
+})
+
+# Cancel Button Click Event
+$buttonCancel.Add_Click({
+    $script:CancellationToken = $true
+    if ($script:ScanJob -and $script:ScanJob.State -eq "Running") {
+        Stop-Job $script:ScanJob -ErrorAction SilentlyContinue
+        Remove-Job $script:ScanJob -ErrorAction SilentlyContinue
+    }
+    $labelStatus.Text = "Scan cancelled by user."
+    $labelStatus.ForeColor = [System.Drawing.Color]::Orange
+    $buttonScan.Enabled = $true
+    $buttonCancel.Enabled = $false
+    $progressBar.Visible = $false
 })
 
 # Delete Button Click Event
@@ -207,16 +371,31 @@ $buttonDelete.Add_Click({
     $selectedIndices = $listBoxResults.CheckedIndices
     
     if ($selectedIndices.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Please select folders to delete", "No Selection", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        [System.Windows.Forms.MessageBox]::Show(
+            "Please select folders to delete", 
+            "No Selection", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
         return
     }
     
     if ($checkBoxPreview.Checked) {
-        [System.Windows.Forms.MessageBox]::Show("Preview Mode: $($selectedIndices.Count) folders would be deleted.`n`nUncheck 'Preview Mode' to actually delete folders.", "Preview Mode", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        [System.Windows.Forms.MessageBox]::Show(
+            "Preview Mode: $($selectedIndices.Count) folders would be deleted.`n`nUncheck 'Preview Mode' to actually delete folders.", 
+            "Preview Mode", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
         return
     }
     
-    $result = [System.Windows.Forms.MessageBox]::Show("Are you sure you want to delete $($selectedIndices.Count) selected empty folders?`n`nThis action cannot be undone.", "Confirm Deletion", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Are you sure you want to delete $($selectedIndices.Count) selected empty folders?`n`nThis action cannot be undone.", 
+        "Confirm Deletion", 
+        [System.Windows.Forms.MessageBoxButtons]::YesNo, 
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
     
     if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
         $buttonDelete.Enabled = $false
@@ -226,7 +405,7 @@ $buttonDelete.Add_Click({
         
         for ($i = 0; $i -lt $selectedIndices.Count; $i++) {
             $index = $selectedIndices[$i]
-            $folderToDelete = $script:emptyFolders[$index]
+            $folderToDelete = $script:EmptyFolders[$index]
             $progressBar.Value = $i + 1
             $labelStatus.Text = "Deleting folder $($i + 1) of $($selectedIndices.Count): $($folderToDelete.Name)"
             $labelStatus.ForeColor = [System.Drawing.Color]::Red
@@ -238,7 +417,12 @@ $buttonDelete.Add_Click({
                 $deletedCount++
             }
             catch {
-                [System.Windows.Forms.MessageBox]::Show("Failed to delete folder '$($folderToDelete.Name)': $($_.Exception.Message)", "Deletion Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Failed to delete folder '$($folderToDelete.Name)': $($_.Exception.Message)", 
+                    "Deletion Error", 
+                    [System.Windows.Forms.MessageBoxButtons]::OK, 
+                    [System.Windows.Forms.MessageBoxIcon]::Error
+                )
             }
         }
         
@@ -248,6 +432,19 @@ $buttonDelete.Add_Click({
         $buttonDelete.Enabled = ($listBoxResults.Items.Count -gt 0)
     }
 })
+#endregion
 
+#region Form Events
+# Form closing event to clean up jobs
+$form.Add_FormClosing({
+    if ($script:ScanJob -and $script:ScanJob.State -eq "Running") {
+        Stop-Job $script:ScanJob -ErrorAction SilentlyContinue
+        Remove-Job $script:ScanJob -ErrorAction SilentlyContinue
+    }
+})
+#endregion
+
+#region Main Execution
 # Show form
 $form.ShowDialog()
+#endregion

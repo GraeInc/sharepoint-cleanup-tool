@@ -34,6 +34,33 @@ if %errorLevel% == 0 (
 )
 echo.
 
+REM Check PowerShell version
+echo Checking PowerShell version...
+powershell -Command "$PSVersionTable.PSVersion.Major"
+set /a PSVersion=0
+for /f "tokens=*" %%i in ('powershell -Command "$PSVersionTable.PSVersion.Major"') do set PSVersion=%%i
+echo PowerShell version: %PSVersion%
+if %PSVersion% LSS 7 (
+    echo PowerShell 5.1 detected. Installing compatible PnP.PowerShell version...
+    goto :install_compatible_module
+) else (
+    echo PowerShell 7+ detected. Installing latest PnP.PowerShell version...
+    goto :check_module
+)
+
+:install_compatible_module
+echo Installing PnP.PowerShell version 1.12.0 (compatible with PowerShell 5.1)...
+powershell -Command "Install-Module -Name PnP.PowerShell -RequiredVersion 1.12.0 -Scope CurrentUser -Force -AllowClobber"
+if %errorLevel% neq 0 (
+    echo ERROR: Failed to install PnP.PowerShell module.
+    echo Please check your internet connection and try again.
+    pause
+    exit /b 1
+)
+echo PnP.PowerShell module installed successfully.
+goto :check_version
+
+:check_module
 REM Check if PnP.PowerShell module is installed
 echo Checking for PnP.PowerShell module...
 powershell -Command "if (Get-Module -ListAvailable -Name PnP.PowerShell) { exit 0 } else { exit 1 }"
@@ -63,15 +90,15 @@ powershell -Command "Get-Module -ListAvailable -Name PnP.PowerShell | Select-Obj
 echo.
 
 REM Check if script files exist
-if not exist "SharePoint-Cleanup.ps1" (
-    echo ERROR: SharePoint-Cleanup.ps1 not found in current directory.
+if not exist "sharepoint-cleanup-script.ps1" (
+    echo ERROR: sharepoint-cleanup-script.ps1 not found in current directory.
     echo Please ensure all files are extracted to the same folder.
     pause
     exit /b 1
 )
 
-if not exist "SharePoint-Cleanup-GUI.ps1" (
-    echo ERROR: SharePoint-Cleanup-GUI.ps1 not found in current directory.
+if not exist "sharepoint-cleanup-gui.ps1" (
+    echo ERROR: sharepoint-cleanup-gui.ps1 not found in current directory.
     echo Please ensure all files are extracted to the same folder.
     pause
     exit /b 1
@@ -96,7 +123,8 @@ echo.
 echo Starting GUI Tool...
 echo Note: If Windows Defender SmartScreen appears, click "More info" then "Run anyway"
 echo.
-powershell -ExecutionPolicy Bypass -File "SharePoint-Cleanup-GUI.ps1"
+REM Import module and run GUI script in same session
+powershell -ExecutionPolicy Bypass -Command "Import-Module PnP.PowerShell; & '.\sharepoint-cleanup-gui.ps1'"
 goto :end
 
 :run_cli
@@ -104,10 +132,11 @@ echo.
 echo Starting Command Line Tool...
 echo.
 echo Example usage:
-echo .\SharePoint-Cleanup.ps1 -SiteUrl "https://yourtenant.sharepoint.com/sites/yoursite" -LibraryName "Documents" -ModifiedDate "2024-01-15"
+echo .\sharepoint-cleanup-script.ps1 -SiteUrl "https://yourtenant.sharepoint.com/sites/yoursite" -LibraryName "Documents" -ModifiedDate "2024-01-15"
 echo.
 echo Opening PowerShell window for manual execution...
-powershell -NoExit -ExecutionPolicy Bypass -Command "Write-Host 'SharePoint Cleanup Tool - Command Line Mode' -ForegroundColor Green; Write-Host 'Use: .\SharePoint-Cleanup.ps1 -SiteUrl [URL] -LibraryName [LibName] -ModifiedDate [Date]' -ForegroundColor Yellow; Write-Host 'Example: .\SharePoint-Cleanup.ps1 -SiteUrl \"https://contoso.sharepoint.com/sites/mysite\" -LibraryName \"Documents\" -ModifiedDate \"2024-01-15\"' -ForegroundColor Cyan"
+REM Import module and open PowerShell with module loaded
+powershell -NoExit -ExecutionPolicy Bypass -Command "Import-Module PnP.PowerShell; Write-Host 'SharePoint Cleanup Tool - Command Line Mode' -ForegroundColor Green; Write-Host 'PnP.PowerShell module loaded successfully!' -ForegroundColor Green; Write-Host 'Use: .\sharepoint-cleanup-script.ps1 -SiteUrl [URL] -LibraryName [LibName] -ModifiedDate [Date]' -ForegroundColor Yellow; Write-Host 'Example: .\sharepoint-cleanup-script.ps1 -SiteUrl \"https://contoso.sharepoint.com/sites/mysite\" -LibraryName \"Documents\" -ModifiedDate \"2024-01-15\"' -ForegroundColor Cyan"
 goto :end
 
 :exit
