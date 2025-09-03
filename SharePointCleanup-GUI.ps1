@@ -234,14 +234,18 @@ $btnConnect.Add_Click({
                 try {
                     Write-Log "INFO" "Trying $method authentication..."
                     
+                    # Use PnP Management Shell Client ID to avoid authentication warnings
+                    $clientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
+                    
                     switch ($method) {
                         "DeviceLogin" { 
-                            Connect-PnPOnline -Url $siteUrl -DeviceLogin
+                            Connect-PnPOnline -Url $siteUrl -DeviceLogin -ClientId $clientId
                         }
                         "Interactive" { 
-                            Connect-PnPOnline -Url $siteUrl -Interactive
+                            Connect-PnPOnline -Url $siteUrl -Interactive -ClientId $clientId
                         }
                         "UseWebLogin" { 
+                            # UseWebLogin doesn't support ClientId parameter
                             Connect-PnPOnline -Url $siteUrl -UseWebLogin
                         }
                     }
