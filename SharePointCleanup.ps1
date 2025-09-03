@@ -49,7 +49,7 @@ if (-not (Get-Module -ListAvailable -Name PnP.PowerShell)) {
 # If no parameters provided or GUI flag set, launch GUI
 if ($GUI -or (-not $CLI -and -not $PSBoundParameters.ContainsKey('SiteUrl'))) {
     Write-Host "Launching GUI mode..." -ForegroundColor Green
-    $guiPath = Join-Path $PSScriptRoot "src\GUI\MainForm.ps1"
+    $guiPath = Join-Path $PSScriptRoot "SharePointCleanup-GUI.ps1"
     
     if (Test-Path $guiPath) {
         & $guiPath
