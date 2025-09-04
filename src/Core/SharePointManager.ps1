@@ -16,20 +16,15 @@ class SharePointManager {
             Import-Module PnP.PowerShell -ErrorAction Stop
             
             # Try multiple authentication methods in order of preference
+            # For PnP.PowerShell v1.12.0 compatibility
+            $tenant = if ($this.SiteUrl -match "https://([^.]+)\.sharepoint\.com") { "$($matches[1]).onmicrosoft.com" } else { $null }
+            
             $methods = @(
                 @{Name="DeviceLogin"; Script={
-                    try {
+                    if ($tenant) {
+                        Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin -Tenant $tenant
+                    } else {
                         Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin
-                    }
-                    catch {
-                        # Try with tenant parameter if URL contains tenant
-                        if ($this.SiteUrl -match "https://([^.]+)\.sharepoint\.com") {
-                            $tenant = $matches[1]
-                            Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin -Tenant "$tenant.onmicrosoft.com"
-                        }
-                        else {
-                            throw
-                        }
                     }
                 }},
                 @{Name="Interactive"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive}},
