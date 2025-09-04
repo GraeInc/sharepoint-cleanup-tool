@@ -16,12 +16,24 @@ class SharePointManager {
             Import-Module PnP.PowerShell -ErrorAction Stop
             
             # Try multiple authentication methods in order of preference
-            # Use PnP Management Shell Client ID to avoid authentication warnings
-            $clientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
-            
             $methods = @(
-                @{Name="DeviceLogin"; Script={Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin -ClientId $clientId}},
-                @{Name="Interactive"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive -ClientId $clientId}},
+                @{Name="DeviceLogin"; Script={
+                    try {
+                        Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin
+                    }
+                    catch {
+                        # Try with tenant parameter if URL contains tenant
+                        if ($this.SiteUrl -match "https://([^.]+)\.sharepoint\.com") {
+                            $tenant = $matches[1]
+                            Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin -Tenant "$tenant.onmicrosoft.com"
+                        }
+                        else {
+                            throw
+                        }
+                    }
+                }},
+                @{Name="Interactive"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive}},
+                @{Name="LaunchBrowser"; Script={Connect-PnPOnline -Url $this.SiteUrl -LaunchBrowser}},
                 @{Name="WebLogin"; Script={Connect-PnPOnline -Url $this.SiteUrl -UseWebLogin}}
             )
             

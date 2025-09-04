@@ -234,18 +234,35 @@ $btnConnect.Add_Click({
                 try {
                     Write-Log "INFO" "Trying $method authentication..."
                     
-                    # Use PnP Management Shell Client ID to avoid authentication warnings
-                    $clientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
-                    
                     switch ($method) {
                         "DeviceLogin" { 
-                            Connect-PnPOnline -Url $siteUrl -DeviceLogin -ClientId $clientId
+                            # Try without ClientId first, if fails try with tenant
+                            try {
+                                Connect-PnPOnline -Url $siteUrl -DeviceLogin
+                            }
+                            catch {
+                                # Extract tenant from URL
+                                if ($siteUrl -match "https://([^.]+)\.sharepoint\.com") {
+                                    $tenant = $matches[1]
+                                    Connect-PnPOnline -Url $siteUrl -DeviceLogin -Tenant "$tenant.onmicrosoft.com"
+                                }
+                                else {
+                                    throw
+                                }
+                            }
                         }
                         "Interactive" { 
-                            Connect-PnPOnline -Url $siteUrl -Interactive -ClientId $clientId
+                            # Try Interactive without ClientId
+                            try {
+                                Connect-PnPOnline -Url $siteUrl -Interactive
+                            }
+                            catch {
+                                # If that fails, try with LaunchBrowser
+                                Connect-PnPOnline -Url $siteUrl -LaunchBrowser
+                            }
                         }
                         "UseWebLogin" { 
-                            # UseWebLogin doesn't support ClientId parameter
+                            # UseWebLogin as fallback
                             Connect-PnPOnline -Url $siteUrl -UseWebLogin
                         }
                     }
