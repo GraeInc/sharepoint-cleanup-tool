@@ -227,7 +227,7 @@ $btnConnect.Add_Click({
     try {
         # Try different authentication methods
         $connected = $false
-        $authMethods = @("DeviceLogin", "Interactive", "UseWebLogin")
+        $authMethods = @("Interactive", "UseWebLogin")
         
         foreach ($method in $authMethods) {
             if (-not $connected) {
@@ -235,18 +235,8 @@ $btnConnect.Add_Click({
                     Write-Log "INFO" "Trying $method authentication..."
                     
                     switch ($method) {
-                        "DeviceLogin" { 
-                            # For v1.12.0, DeviceLogin works but may need tenant
-                            if ($siteUrl -match "https://([^.]+)\.sharepoint\.com") {
-                                $tenant = $matches[1]
-                                Connect-PnPOnline -Url $siteUrl -DeviceLogin -Tenant "$tenant.onmicrosoft.com"
-                            }
-                            else {
-                                Connect-PnPOnline -Url $siteUrl -DeviceLogin
-                            }
-                        }
                         "Interactive" { 
-                            # Interactive should work directly in v1.12.0
+                            # Interactive is the preferred method for v1.12.0
                             Connect-PnPOnline -Url $siteUrl -Interactive
                         }
                         "UseWebLogin" { 

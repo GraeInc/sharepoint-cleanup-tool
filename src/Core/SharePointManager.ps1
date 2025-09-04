@@ -20,15 +20,7 @@ class SharePointManager {
             $tenant = if ($this.SiteUrl -match "https://([^.]+)\.sharepoint\.com") { "$($matches[1]).onmicrosoft.com" } else { $null }
             
             $methods = @(
-                @{Name="DeviceLogin"; Script={
-                    if ($tenant) {
-                        Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin -Tenant $tenant
-                    } else {
-                        Connect-PnPOnline -Url $this.SiteUrl -DeviceLogin
-                    }
-                }},
                 @{Name="Interactive"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive}},
-                @{Name="LaunchBrowser"; Script={Connect-PnPOnline -Url $this.SiteUrl -LaunchBrowser}},
                 @{Name="WebLogin"; Script={Connect-PnPOnline -Url $this.SiteUrl -UseWebLogin}}
             )
             
