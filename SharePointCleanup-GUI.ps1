@@ -227,7 +227,9 @@ $btnConnect.Add_Click({
     try {
         # Try different authentication methods
         $connected = $false
-        $authMethods = @("Interactive", "UseWebLogin")
+        # Use Azure CLI client ID which is pre-registered in most tenants
+        $azureCliClientId = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+        $authMethods = @("InteractiveWithAzureCLI", "Interactive", "UseWebLogin")
         
         foreach ($method in $authMethods) {
             if (-not $connected) {
@@ -235,12 +237,16 @@ $btnConnect.Add_Click({
                     Write-Log "INFO" "Trying $method authentication..."
                     
                     switch ($method) {
+                        "InteractiveWithAzureCLI" { 
+                            # Use Azure CLI client ID for tenant restrictions
+                            Connect-PnPOnline -Url $siteUrl -Interactive -ClientId $azureCliClientId
+                        }
                         "Interactive" { 
-                            # Interactive is the preferred method for v1.12.0
+                            # Fallback to default Interactive for v1.12.0
                             Connect-PnPOnline -Url $siteUrl -Interactive
                         }
                         "UseWebLogin" { 
-                            # UseWebLogin as fallback for v1.12.0
+                            # UseWebLogin as last resort for v1.12.0
                             Connect-PnPOnline -Url $siteUrl -UseWebLogin
                         }
                     }

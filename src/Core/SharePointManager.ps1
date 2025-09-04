@@ -16,10 +16,12 @@ class SharePointManager {
             Import-Module PnP.PowerShell -ErrorAction Stop
             
             # Try multiple authentication methods in order of preference
-            # For PnP.PowerShell v1.12.0 compatibility
-            $tenant = if ($this.SiteUrl -match "https://([^.]+)\.sharepoint\.com") { "$($matches[1]).onmicrosoft.com" } else { $null }
+            # For PnP.PowerShell v1.12.0 compatibility with tenant restrictions
+            # Use Azure CLI client ID which is pre-registered in most tenants
+            $azureCliClientId = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
             
             $methods = @(
+                @{Name="Interactive with Azure CLI"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive -ClientId $azureCliClientId}},
                 @{Name="Interactive"; Script={Connect-PnPOnline -Url $this.SiteUrl -Interactive}},
                 @{Name="WebLogin"; Script={Connect-PnPOnline -Url $this.SiteUrl -UseWebLogin}}
             )
