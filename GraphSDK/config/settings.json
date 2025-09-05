@@ -1,0 +1,10 @@
+﻿{
+    "DefaultLibrary":  "Documents",
+    "EnableLogging":  true,
+    "MaxBatchSize":  100,
+    "PreviewMode":  true,
+    "LogRetentionDays":  30,
+    "RecentSites":  [
+
+                    ]
+}
