@@ -134,18 +134,36 @@ Keep error messages simple and actionable:
 3. **It must be safe** - No accidental deletions
 4. **It must log everything** - Audit trail required
 
-## Current Status (2025-09-04)
-- **Migration in progress** from PnP.PowerShell to Microsoft Graph SDK
-- **Reason**: PnP authentication fails due to tenant restrictions
-- **Solution**: Graph SDK has built-in multi-tenant app support
+## Current Status (2025-09-04 Evening)
+- **Migration COMPLETE** from PnP.PowerShell to Microsoft Graph SDK
+- **New Issue**: Microsoft Graph SDK v2.30.0 has internal parsing bug
+- **Workaround**: Created SharePointCleaner-Direct.ps1 that bypasses the bug
+- **Location**: All new code in GraphSDK/ folder
 
-## Next Steps
-1. Build core Graph SDK authentication
-2. Implement folder scanning with Graph API
-3. Create simple Windows Forms GUI
-4. Add comprehensive logging
-5. Test across multiple tenants
-6. Clean up all PnP code
+## Known Issues
+### Microsoft Graph Module Bug
+- **Error**: "The string is missing the terminator: '."
+- **Cause**: Internal parsing error in Graph SDK v2.30.0
+- **Impact**: Normal module import fails
+- **Solution**: Use SharePointCleaner-Direct.ps1 or reinstall older version
+
+## Working Components
+- ✅ Authentication logic (when module loads)
+- ✅ Site connection
+- ✅ Library enumeration  
+- ✅ Empty folder detection
+- ✅ Folder deletion
+- ✅ GUI interface (complete)
+- ✅ CLI interface (complete)
+- ✅ Logging system
+
+## Next Steps (2025-09-05)
+1. Test SharePointCleaner-Direct.ps1 with real SharePoint
+2. Try older Graph module versions (2.24.0)
+3. If needed, implement REST API fallback
+4. Finalize and document working solution
+5. Clean up unnecessary files
+6. Update main documentation
 
 ## Remember
 This tool is for **non-technical junior administrators**. If they can't figure it out in 30 seconds, it's too complex. Keep it simple!
